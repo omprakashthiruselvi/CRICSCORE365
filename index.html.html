@@ -938,7 +938,7 @@
                     const fives = o.log.filter(b => b.runVal === 5 && b.extraType === null).length;
                     const sixes = o.log.filter(b => b.runVal === 6 && b.extraType === null).length;
                     const extras = o.log.filter(b => b.extraType !== null).length;
-                    const wkts = o.log.filter(b => b.isWicket).length;
+                    const wkts = o.log.filter(b => b.actIsWicket).length;
                     
                     let ballsHtml = '';
                     o.log.forEach((b, bi) => {
@@ -1457,153 +1457,6 @@
             return html;
         };
 
-        // --- NEW PDF GENERATION ENGINE ---
-        window.generatePDFLayout = function(match, t) {
-            let html = `
-            <div style="width: 800px; margin: 0 auto; padding: 40px; font-family: 'Arial', sans-serif; color: #000000; background: #ffffff; box-sizing: border-box;">
-                
-                <!-- Colorful & Big Match Title -->
-                <div style="text-align: center; margin-bottom: 10px;">
-                    <span style="font-size: 46px; font-weight: 900; color: #2563eb; text-transform: uppercase;">${match.team1}</span>
-                    <span style="font-size: 32px; font-weight: 900; color: #ef4444; margin: 0 15px;">VS</span>
-                    <span style="font-size: 46px; font-weight: 900; color: #16a34a; text-transform: uppercase;">${match.team2}</span>
-                </div>
-                
-                <div style="text-align: center; font-size: 18px; color: #4b5563; margin-bottom: 30px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px;">
-                    ${match.roundStr || 'MATCH'} &bull; ${window.formatDateStr(match.createdAt)}
-                </div>
-            `;
-
-            // Result (Big & Bold)
-            let res = "";
-            if (match.matchStatus !== 'playing' && match.matchStatus !== 'innings_break') {
-               if (match.isSuperOver && match.matchStatus !== 'tie') res = `${match.matchStatus === 'team1_won' ? match.team1 : match.team2} ${t.wonBy} the ${match.tieBreakerInfo}`;
-               else if (match.tieBreakerInfo && !match.isSuperOver) res = `${match.matchStatus === 'team1_won' ? match.team1 : match.team2} ${t.wonBy} ${match.tieBreakerInfo}`;
-               else if (match.matchStatus === 'team1_won') res = `${match.team1} ${t.wonBy} ${match.score1.runs - match.score2.runs} runs`;
-               else if (match.matchStatus === 'team2_won') {
-                   const target = match.revisedTarget ? match.revisedTarget : match.score1.runs + 1;
-                   const ballsLeft = (match.overs * 6) - match.score2.balls;
-                   res = `${match.team2} ${t.wonBy} ${10 - match.score2.wickets} wkts (${ballsLeft} balls left)`;
-               } else if (match.matchStatus === 'tie') res = t.tied;
-               
-               html += `<div style="text-align: center; background-color: #dc2626; color: #ffffff; padding: 20px; border-radius: 12px; font-size: 26px; font-weight: 900; margin-bottom: 40px; text-transform: uppercase; border: 4px solid #991b1b; box-shadow: 0px 4px 6px rgba(0,0,0,0.1);">${res}</div>`;
-            }
-
-            const matchSets = match.isSuperOver ? [ { s1: match.mainScore1, s2: match.mainScore2, label: 'MAIN MATCH' }, { s1: match.score1, s2: match.score2, label: match.tieBreakerInfo?.toUpperCase() || 'TIE BREAKER' } ] : [ { s1: match.score1, s2: match.score2, label: '' } ];
-
-            matchSets.forEach((mSet) => {
-                if (mSet.label) html += `<div style="text-align: center; border-bottom: 4px solid #cbd5e1; padding-bottom: 10px; margin-top: 40px; margin-bottom: 25px; font-size: 24px; font-weight: 900; color: #1e293b; letter-spacing: 2px; text-transform: uppercase;">${mSet.label}</div>`;
-                
-                [mSet.s1, mSet.s2].forEach((sc, i) => {
-                    if (!sc || !(i === 0 || match.innings === 2 || match.matchStatus !== 'playing')) return;
-                    const team = i === 0 ? match.team1 : match.team2;
-                    const innPrefix = i === 0 ? '1st ' : '2nd ';
-
-                    html += `<div style="margin-top: 30px; border: 2px solid #94a3b8; border-radius: 12px; overflow: hidden; background: #ffffff;">`;
-                    
-                    // Innings Header (Using table to explicitly force strict alignment in PDF)
-                    html += `
-                        <table style="width: 100%; border-collapse: collapse; background-color: #1e3a8a; color: #ffffff;">
-                            <tr>
-                                <td style="padding: 15px 20px; font-size: 22px; font-weight: 900; text-transform: uppercase;">${innPrefix}INNINGS - ${team}</td>
-                                <td style="padding: 15px 20px; font-size: 22px; font-weight: 900; text-align: right;">${sc.runs}/${sc.wickets} <span style="font-size: 16px; font-weight: bold; opacity: 0.9;">(${window.fmtOvers(sc.balls)} Overs)</span></td>
-                            </tr>
-                        </table>
-                    `;
-
-                    // Batting Table
-                    html += `<table style="width: 100%; border-collapse: collapse; font-size: 16px;">
-                                <thead>
-                                    <tr style="background-color: #e0e7ff; color: #1e3a8a; border-bottom: 3px solid #93c5fd;">
-                                        <th style="padding: 12px 15px; font-weight: 900; text-align: left; width: 40%; font-size: 18px;">${t.batsmen || 'Batsmen'}</th>
-                                        <th style="padding: 12px 10px; font-weight: 900; text-align: center; width: 12%; font-size: 18px;">R</th>
-                                        <th style="padding: 12px 10px; font-weight: 900; text-align: center; width: 12%; font-size: 18px;">B</th>
-                                        <th style="padding: 12px 10px; font-weight: 900; text-align: center; width: 12%; font-size: 18px;">4s</th>
-                                        <th style="padding: 12px 10px; font-weight: 900; text-align: center; width: 12%; font-size: 18px;">6s</th>
-                                        <th style="padding: 12px 10px; font-weight: 900; text-align: center; width: 12%; font-size: 18px;">SR</th>
-                                    </tr>
-                                </thead>
-                                <tbody>`;
-                    sc.allBatters.forEach((b, j) => {
-                        if (b.balls === 0 && !b.isOut && j > 1 && match.matchStatus === 'playing') return;
-                        html += `<tr style="border-bottom: 2px solid #e2e8f0; background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">
-                                    <td style="padding: 12px 15px; text-align: left;">
-                                        <div style="font-weight: 900; font-size: 18px; color: #0f172a;">${b.name}</div>
-                                        <div style="font-size: 14px; color: #dc2626; margin-top: 4px; text-transform: uppercase; font-weight: bold;">${b.isOut ? (b.dismissal || '(out)') : 'not out'}</div>
-                                    </td>
-                                    <td style="padding: 12px 10px; text-align: center; font-weight: 900; font-size: 20px; color: #000000;">${b.runs}</td>
-                                    <td style="padding: 12px 10px; text-align: center; font-weight: bold; color: #475569; font-size: 18px;">${b.balls}</td>
-                                    <td style="padding: 12px 10px; text-align: center; font-weight: bold; color: #475569; font-size: 18px;">${b.fours}</td>
-                                    <td style="padding: 12px 10px; text-align: center; font-weight: bold; color: #475569; font-size: 18px;">${b.sixes}</td>
-                                    <td style="padding: 12px 10px; text-align: center; font-weight: bold; color: #475569; font-size: 18px;">${window.calcSR(b.runs, b.balls)}</td>
-                                 </tr>`;
-                    });
-                    html += `</tbody></table>`;
-                    
-                    // Extras
-                    html += `<div style="padding: 15px 20px; background-color: #f1f5f9; font-size: 18px; color: #334155; font-weight: bold; border-bottom: 3px solid #cbd5e1;">
-                                Extras: <span style="color: #0f172a; font-weight: 900; font-size: 20px; margin-right: 15px;">${sc.extras}</span> 
-                                <span style="font-size: 16px;">(WD: <span style="color: #b45309;">${sc.wides}</span>, NB: <span style="color: #dc2626;">${sc.noBalls}</span>)</span>
-                             </div>`;
-
-                    // Bowling Table
-                    html += `<table style="width: 100%; border-collapse: collapse; font-size: 16px;">
-                                <thead>
-                                    <tr style="background-color: #e0e7ff; color: #1e3a8a; border-bottom: 3px solid #93c5fd;">
-                                        <th style="padding: 12px 15px; font-weight: 900; text-align: left; width: 40%; font-size: 18px;">${t.bowler || 'Bowler'}</th>
-                                        <th style="padding: 12px 10px; font-weight: 900; text-align: center; width: 15%; font-size: 18px;">O</th>
-                                        <th style="padding: 12px 10px; font-weight: 900; text-align: center; width: 15%; font-size: 18px;">R</th>
-                                        <th style="padding: 12px 10px; font-weight: 900; text-align: center; width: 15%; font-size: 18px;">W</th>
-                                        <th style="padding: 12px 10px; font-weight: 900; text-align: center; width: 15%; font-size: 18px;">Eco</th>
-                                    </tr>
-                                </thead>
-                                <tbody>`;
-                    sc.allBowlers.forEach((b, j) => {
-                        if (b.balls === 0 && b.runs === 0 && match.matchStatus === 'playing') return;
-                        html += `<tr style="border-bottom: 2px solid #e2e8f0; background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">
-                                    <td style="padding: 12px 15px; text-align: left; font-weight: 900; font-size: 18px; color: #0f172a;">${b.name}</td>
-                                    <td style="padding: 12px 10px; text-align: center; font-weight: bold; color: #475569; font-size: 18px;">${window.fmtOvers(b.balls)}</td>
-                                    <td style="padding: 12px 10px; text-align: center; font-weight: 900; font-size: 20px; color: #000000;">${b.runs}</td>
-                                    <td style="padding: 12px 10px; text-align: center; font-weight: 900; font-size: 20px; color: #dc2626;">${b.wickets}</td>
-                                    <td style="padding: 12px 10px; text-align: center; font-weight: bold; color: #475569; font-size: 18px;">${window.calcEco(b.runs, b.balls)}</td>
-                                 </tr>`;
-                    });
-                    html += `</tbody></table>`;
-                    html += `</div>`; // End of Innings Container
-                });
-            });
-
-            html += `<div style="text-align: center; font-size: 14px; font-weight: 900; color: #94a3b8; margin-top: 50px; padding-top: 20px; border-top: 2px dashed #cbd5e1; letter-spacing: 2px; text-transform: uppercase;">GENERATED BY CRICSCORE_ICC</div>`;
-            html += `</div>`;
-            return html;
-        };
-
-        window.downloadPDF = () => {
-            const m = window.appState.selectedHistoryMatch || window.appState.activeMatch;
-            if (!m) return;
-            const t = dict[window.appState.lang] || dict['en'];
-
-            window.customAlert("Generating PDF... Please wait.");
-            
-            const htmlStr = window.generatePDFLayout(m, t);
-
-            // Using a strictly sized wrapper container forces the engine to bypass flex layout bugs
-            const container = document.createElement('div');
-            container.innerHTML = htmlStr;
-
-            setTimeout(() => {
-                const opt = {
-                    margin:       0.3,
-                    filename:     `CRICSCORE_${m.team1}_vs_${m.team2}.pdf`,
-                    image:        { type: 'jpeg', quality: 1.0 },
-                    html2canvas:  { scale: 2, useCORS: true, logging: false, windowWidth: 800 },
-                    jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
-                };
-                
-                html2pdf().set(opt).from(container).save();
-            }, 500);
-        };
-
         // --- MODALS RENDERER ---
         window.renderModal = function(t) {
             const m = window.appState.activeMatch;
@@ -1968,23 +1821,201 @@
             window.closeModal();
         };
 
+        window.generatePDFLayout = function(match, t) {
+            let html = `
+            <div style="width: 800px; padding: 40px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #0f172a; background: #ffffff; box-sizing: border-box;">
+                
+                <!-- Match Report Header -->
+                <div style="text-align: center; margin-bottom: 25px; border-bottom: 3px solid #cbd5e1; padding-bottom: 15px;">
+                    <h1 style="font-size: 38px; font-weight: 900; color: #1e3a8a; margin: 0; text-transform: uppercase; letter-spacing: 2px;">MATCH REPORT</h1>
+                    <div style="font-size: 16px; color: #64748b; margin-top: 8px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px;">
+                        ${match.roundStr || 'MATCH'} &bull; ${window.formatDateStr(match.createdAt)}
+                    </div>
+                </div>
+
+                <!-- Teams & Scores Summary -->
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+                    <tr>
+                        <td style="width: 45%; text-align: right; vertical-align: middle; padding: 10px;">
+                            <div style="font-size: 36px; font-weight: 900; color: #2563eb; text-transform: uppercase;">${match.team1}</div>
+                            ${match.score1 ? `<div style="font-size: 24px; font-weight: bold; color: #334155; margin-top: 5px;">${match.score1.runs}/${match.score1.wickets} <span style="font-size: 16px; color: #64748b;">(${window.fmtOvers(match.score1.balls)})</span></div>` : ''}
+                        </td>
+                        <td style="width: 10%; text-align: center; vertical-align: middle; font-size: 28px; font-weight: 900; color: #ef4444; padding: 10px;">VS</td>
+                        <td style="width: 45%; text-align: left; vertical-align: middle; padding: 10px;">
+                            <div style="font-size: 36px; font-weight: 900; color: #16a34a; text-transform: uppercase;">${match.team2}</div>
+                            ${(match.score2 && (match.innings === 2 || match.matchStatus !== 'playing')) ? `<div style="font-size: 24px; font-weight: bold; color: #334155; margin-top: 5px;">${match.score2.runs}/${match.score2.wickets} <span style="font-size: 16px; color: #64748b;">(${window.fmtOvers(match.score2.balls)})</span></div>` : ''}
+                        </td>
+                    </tr>
+                </table>
+            `;
+
+            // Result
+            let res = "";
+            if (match.matchStatus !== 'playing' && match.matchStatus !== 'innings_break') {
+               if (match.isSuperOver && match.matchStatus !== 'tie') res = `${match.matchStatus === 'team1_won' ? match.team1 : match.team2} ${t.wonBy} the ${match.tieBreakerInfo}`;
+               else if (match.tieBreakerInfo && !match.isSuperOver) res = `${match.matchStatus === 'team1_won' ? match.team1 : match.team2} ${t.wonBy} ${match.tieBreakerInfo}`;
+               else if (match.matchStatus === 'team1_won') res = `${match.team1} ${t.wonBy} ${match.score1.runs - match.score2.runs} runs`;
+               else if (match.matchStatus === 'team2_won') {
+                   const target = match.revisedTarget ? match.revisedTarget : match.score1.runs + 1;
+                   const ballsLeft = (match.overs * 6) - match.score2.balls;
+                   res = `${match.team2} ${t.wonBy} ${10 - match.score2.wickets} wkts (${ballsLeft} balls left)`;
+               } else if (match.matchStatus === 'tie') res = t.tied;
+               
+               html += `<div style="text-align: center; background-color: #dc2626; color: #ffffff; padding: 20px; border-radius: 8px; font-size: 24px; font-weight: 900; margin-bottom: 40px; text-transform: uppercase; border: 3px solid #991b1b;">${res}</div>`;
+            }
+
+            const matchSets = match.isSuperOver ? [ { s1: match.mainScore1, s2: match.mainScore2, label: 'MAIN MATCH' }, { s1: match.score1, s2: match.score2, label: match.tieBreakerInfo?.toUpperCase() || 'TIE BREAKER' } ] : [ { s1: match.score1, s2: match.score2, label: '' } ];
+
+            matchSets.forEach((mSet) => {
+                if (mSet.label) html += `<div style="text-align: center; border-bottom: 3px solid #cbd5e1; padding-bottom: 10px; margin-top: 30px; margin-bottom: 20px; font-size: 22px; font-weight: 900; color: #1e293b; letter-spacing: 2px; text-transform: uppercase;">${mSet.label}</div>`;
+                
+                [mSet.s1, mSet.s2].forEach((sc, i) => {
+                    if (!sc || !(i === 0 || match.innings === 2 || match.matchStatus !== 'playing')) return;
+                    const team = i === 0 ? match.team1 : match.team2;
+                    const innPrefix = i === 0 ? '1st ' : '2nd ';
+
+                    html += `<div style="margin-top: 25px; border: 2px solid #94a3b8; border-radius: 8px; overflow: hidden; background: #ffffff;">`;
+                    
+                    // Innings Header
+                    html += `
+                        <table style="width: 100%; border-collapse: collapse; background-color: #1e3a8a; color: #ffffff;">
+                            <tr>
+                                <td style="padding: 12px 20px; font-size: 20px; font-weight: 900; text-transform: uppercase; text-align: left;">${innPrefix}INNINGS - ${team}</td>
+                                <td style="padding: 12px 20px; font-size: 20px; font-weight: 900; text-align: right;">${sc.runs}/${sc.wickets} <span style="font-size: 16px; font-weight: normal; opacity: 0.9;">(${window.fmtOvers(sc.balls)} Overs)</span></td>
+                            </tr>
+                        </table>
+                    `;
+
+                    // Batting Table
+                    html += `<table style="width: 100%; border-collapse: collapse; font-size: 16px;">
+                                <thead>
+                                    <tr style="background-color: #e0e7ff; color: #1e3a8a;">
+                                        <th style="padding: 12px 15px; font-weight: bold; text-align: left; border: 1px solid #cbd5e1; width: 40%;">BATSMAN</th>
+                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 12%;">R</th>
+                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 12%;">B</th>
+                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 12%;">4s</th>
+                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 12%;">6s</th>
+                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 12%;">SR</th>
+                                    </tr>
+                                </thead>
+                                <tbody>`;
+                    sc.allBatters.forEach((b, j) => {
+                        if (b.balls === 0 && !b.isOut && j > 1 && match.matchStatus === 'playing') return;
+                        html += `<tr style="background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+                                    <td style="padding: 10px 15px; text-align: left; border: 1px solid #cbd5e1;">
+                                        <div style="font-weight: bold; font-size: 18px; color: #0f172a;">${b.name}</div>
+                                        <div style="font-size: 14px; color: #dc2626; margin-top: 2px; font-weight: bold;">${b.isOut ? (b.dismissal || '(out)') : 'not out'}</div>
+                                    </td>
+                                    <td style="padding: 10px; text-align: center; font-weight: 900; font-size: 18px; border: 1px solid #cbd5e1;">${b.runs}</td>
+                                    <td style="padding: 10px; text-align: center; color: #475569; border: 1px solid #cbd5e1;">${b.balls}</td>
+                                    <td style="padding: 10px; text-align: center; color: #475569; border: 1px solid #cbd5e1;">${b.fours}</td>
+                                    <td style="padding: 10px; text-align: center; color: #475569; border: 1px solid #cbd5e1;">${b.sixes}</td>
+                                    <td style="padding: 10px; text-align: center; color: #475569; border: 1px solid #cbd5e1;">${window.calcSR(b.runs, b.balls)}</td>
+                                 </tr>`;
+                    });
+                    html += `</tbody></table>`;
+                    
+                    // Extras
+                    html += `<div style="padding: 12px 20px; background-color: #f1f5f9; font-size: 16px; color: #334155; font-weight: bold; border-bottom: 2px solid #94a3b8; border-top: 2px solid #94a3b8;">
+                                EXTRAS: <span style="color: #0f172a; font-weight: 900; font-size: 18px; margin-right: 15px;">${sc.extras}</span> 
+                                <span style="font-size: 14px; font-weight: normal;">(WD: ${sc.wides}, NB: ${sc.noBalls})</span>
+                             </div>`;
+
+                    // Bowling Table
+                    html += `<table style="width: 100%; border-collapse: collapse; font-size: 16px;">
+                                <thead>
+                                    <tr style="background-color: #e0e7ff; color: #1e3a8a;">
+                                        <th style="padding: 12px 15px; font-weight: bold; text-align: left; border: 1px solid #cbd5e1; width: 40%;">BOWLER</th>
+                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 15%;">O</th>
+                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 15%;">R</th>
+                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 15%;">W</th>
+                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 15%;">ECO</th>
+                                    </tr>
+                                </thead>
+                                <tbody>`;
+                    sc.allBowlers.forEach((b, j) => {
+                        if (b.balls === 0 && b.runs === 0 && match.matchStatus === 'playing') return;
+                        html += `<tr style="background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+                                    <td style="padding: 10px 15px; text-align: left; font-weight: bold; font-size: 18px; color: #0f172a; border: 1px solid #cbd5e1;">${b.name}</td>
+                                    <td style="padding: 10px; text-align: center; color: #475569; border: 1px solid #cbd5e1;">${window.fmtOvers(b.balls)}</td>
+                                    <td style="padding: 10px; text-align: center; font-weight: 900; font-size: 18px; border: 1px solid #cbd5e1;">${b.runs}</td>
+                                    <td style="padding: 10px; text-align: center; font-weight: 900; font-size: 18px; color: #dc2626; border: 1px solid #cbd5e1;">${b.wickets}</td>
+                                    <td style="padding: 10px; text-align: center; color: #475569; border: 1px solid #cbd5e1;">${window.calcEco(b.runs, b.balls)}</td>
+                                 </tr>`;
+                    });
+                    html += `</tbody></table>`;
+                    html += `</div>`; // End of Innings Container
+                });
+            });
+
+            html += `<div style="text-align: center; font-size: 12px; font-weight: bold; color: #94a3b8; margin-top: 40px; padding-top: 20px; border-top: 2px dashed #cbd5e1; letter-spacing: 2px; text-transform: uppercase;">GENERATED BY CRICSCORE_ICC</div>`;
+            html += `</div>`;
+            return html;
+        };
+
         window.shareMatch = async () => {
             const m = window.appState.selectedHistoryMatch || window.appState.activeMatch;
             if (!m) return;
+            const t = dict[window.appState.lang] || dict['en'];
             const s1 = m.isSuperOver ? m.mainScore1 : m.score1;
             const s2 = m.isSuperOver ? m.mainScore2 : m.score2;
-            let text = `CRICSCORE_ICC - Match Summary\n\n${m.team1} vs ${m.team2}\n`;
+            let text = `CRICSCORE_ICC - Match Report\n\n${m.team1} vs ${m.team2}\n`;
             if (s1) text += `${m.team1}: ${s1.runs}/${s1.wickets} (${window.fmtOvers(s1.balls)} Overs)\n`;
             if (s2 && (m.innings === 2 || (m.matchStatus !== 'playing' && m.matchStatus !== 'innings_break'))) {
                 text += `${m.team2}: ${s2.runs}/${s2.wickets} (${window.fmtOvers(s2.balls)} Overs)\n`;
             }
             
+            window.customAlert("Preparing PDF to share... Please wait.");
+
+            const htmlStr = window.generatePDFLayout(m, t);
+            
+            // Create an invisible wrapper that has zero height, but contains the full layout inside.
+            const wrapper = document.createElement('div');
+            wrapper.style.position = 'absolute';
+            wrapper.style.top = '0';
+            wrapper.style.left = '0';
+            wrapper.style.width = '0px';
+            wrapper.style.height = '0px';
+            wrapper.style.overflow = 'hidden';
+            wrapper.style.pointerEvents = 'none';
+
+            // The actual container
+            const container = document.createElement('div');
+            container.style.width = '800px';
+            container.style.backgroundColor = '#ffffff';
+            container.innerHTML = htmlStr;
+
+            wrapper.appendChild(container);
+            document.body.appendChild(wrapper);
+
+            await new Promise(r => setTimeout(r, 400)); // Allow DOM to fully paint the element
+
+            const filename = `Match_Report_${m.team1}_vs_${m.team2}.pdf`;
+            const opt = {
+                margin:       0.2,
+                filename:     filename,
+                image:        { type: 'jpeg', quality: 1.0 },
+                html2canvas:  { scale: 2, useCORS: true, logging: false },
+                jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+            };
+
             try {
-                if (navigator.share) {
-                    await navigator.share({
-                        title: 'Match Scorecard',
-                        text: text
-                    });
+                const pdfBlob = await html2pdf().set(opt).from(container).output('blob');
+                
+                const file = new File([pdfBlob], filename, { type: 'application/pdf' });
+                
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    try {
+                        await navigator.share({
+                            title: 'Match Report',
+                            text: text,
+                            files: [file]
+                        });
+                    } catch (err) {
+                        console.log('Share error', err);
+                    }
+                } else if (navigator.share) {
+                    await navigator.share({ title: 'Match Report', text: text });
                 } else {
                     const textArea = document.createElement("textarea");
                     textArea.value = text;
@@ -1992,10 +2023,59 @@
                     textArea.select();
                     document.execCommand("copy");
                     textArea.remove();
-                    window.customAlert("Score summary copied to clipboard!");
+                    window.customAlert("Score summary copied! (PDF sharing requires a compatible mobile browser)");
                 }
             } catch(e) {
-                console.log('Share error', e);
+                console.log('PDF generation error', e);
+            } finally {
+                document.body.removeChild(wrapper);
+            }
+        };
+
+        window.downloadPDF = async () => {
+            const m = window.appState.selectedHistoryMatch || window.appState.activeMatch;
+            if (!m) return;
+            const t = dict[window.appState.lang] || dict['en'];
+
+            window.customAlert("Generating PDF Report... Please wait.");
+            
+            const htmlStr = window.generatePDFLayout(m, t);
+
+            // Create an invisible wrapper that has zero height, but contains the full layout inside.
+            const wrapper = document.createElement('div');
+            wrapper.style.position = 'absolute';
+            wrapper.style.top = '0';
+            wrapper.style.left = '0';
+            wrapper.style.width = '0px';
+            wrapper.style.height = '0px';
+            wrapper.style.overflow = 'hidden';
+            wrapper.style.pointerEvents = 'none';
+
+            // The actual container
+            const container = document.createElement('div');
+            container.style.width = '800px';
+            container.style.backgroundColor = '#ffffff';
+            container.innerHTML = htmlStr;
+
+            wrapper.appendChild(container);
+            document.body.appendChild(wrapper);
+
+            await new Promise(r => setTimeout(r, 400)); // Allow DOM to fully paint the element
+
+            const opt = {
+                margin:       0.2,
+                filename:     `Match_Report_${m.team1}_vs_${m.team2}.pdf`,
+                image:        { type: 'jpeg', quality: 1.0 },
+                html2canvas:  { scale: 2, useCORS: true, logging: false },
+                jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+            };
+            
+            try {
+                await html2pdf().set(opt).from(container).save();
+            } catch (err) {
+                console.error("PDF generation failed:", err);
+            } finally {
+                document.body.removeChild(wrapper);
             }
         };
 

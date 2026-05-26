@@ -258,6 +258,7 @@
             window.appState.modal = {type, arg1, arg2}; 
             let wktTypeDef = 'Bowled';
             if (type === 'wicket' && m && m.isFreeHit) wktTypeDef = 'Run Out';
+            if (type === 'extra') wktTypeDef = '';
             window.appState.modalState = { runs: 0, wktType: wktTypeDef, fielder: '', roRuns: 0 };
             window.renderApp(); 
         };
@@ -534,6 +535,12 @@
         };
 
         window.processBallDirect = function(m, act, globalIndex) {
+            if (act.isSwap) {
+                const sc = m.innings === 1 ? m.score1 : m.score2;
+                sc.striker = sc.striker === 1 ? 2 : 1;
+                return m;
+            }
+
             if (act.isStartInnings2) {
                 m.innings = 2;
                 m.matchStatus = 'playing';
@@ -578,18 +585,12 @@
 
             let isLegal = true;
             let label = act.runs.toString();
-            let totalRuns = act.runs + act.extraRuns + act.runOutRuns;
+            let totalRuns = (act.runs || 0) + (act.extraRuns || 0) + (act.runOutRuns || 0);
             let wasFreeHit = m.isFreeHit;
-
-            const getBat = (name) => {
-                let b = sc.allBatters.find(x => x.name === name);
-                if (!b) { b = { name, runs: 0, balls: 0, fours: 0, sixes: 0, isOut: false }; sc.allBatters.push(b); }
-                return b;
-            };
 
             if (act.extraType === 'WD') {
                 isLegal = false;
-                const wides = 1 + act.extraRuns + act.runOutRuns + (act.runs || 0);
+                const wides = 1 + (act.extraRuns || 0) + (act.runOutRuns || 0) + (act.runs || 0);
                 sc.extras += wides;
                 sc.wides += 1;
                 sc.runs += wides;
@@ -604,7 +605,7 @@
                 isLegal = false;
                 sc.extras += 1;
                 sc.noBalls += 1;
-                const batsmanRuns = act.runs + act.extraRuns + act.runOutRuns;
+                const batsmanRuns = (act.runs || 0) + (act.extraRuns || 0) + (act.runOutRuns || 0);
                 sc.runs += 1 + batsmanRuns;
                 sc.currentOverRuns += 1 + batsmanRuns;
                 label = `NB${batsmanRuns > 0 ? '+'+batsmanRuns : ''}`;
@@ -615,18 +616,13 @@
 
                 striker.balls += 1;
                 striker.runs += batsmanRuns;
-                if (batsmanRuns === 4) striker.fours++;
-                if (batsmanRuns === 6) striker.sixes++;
+                if ((act.extraRuns === 4 || act.runs === 4) && (act.runOutRuns || 0) === 0) striker.fours++;
+                if ((act.extraRuns === 6 || act.runs === 6) && (act.runOutRuns || 0) === 0) striker.sixes++;
 
-                const btInAll = getBat(striker.name);
-                btInAll.balls++;
-                btInAll.runs += batsmanRuns;
-                if (batsmanRuns === 4) btInAll.fours++;
-                if (batsmanRuns === 6) btInAll.sixes++;
                 totalRuns = 1 + batsmanRuns;
             } else if (act.extraType === 'LB' || act.extraType === 'BYE') {
                 isLegal = true;
-                const byes = act.runs + act.extraRuns + act.runOutRuns;
+                const byes = (act.runs || 0) + (act.extraRuns || 0) + (act.runOutRuns || 0);
                 sc.extras += byes;
                 sc.runs += byes;
                 sc.currentOverRuns += byes;
@@ -635,12 +631,11 @@
                 label = `${byes}${act.extraType === 'BYE' ? 'B' : 'LB'}`;
                 
                 striker.balls += 1;
-                getBat(striker.name).balls++;
                 totalRuns = byes;
             } else {
                 if (wasFreeHit) m.isFreeHit = false;
                 sc.balls += 1;
-                const batR = act.runs + act.runOutRuns;
+                const batR = (act.runs || 0) + (act.runOutRuns || 0);
                 sc.runs += batR;
                 sc.currentOverRuns += batR;
                 sc.bowler.balls += 1;
@@ -652,12 +647,6 @@
                 if (act.runs === 5) striker.fours++;
                 if (act.runs === 6) striker.sixes++;
 
-                const btInAll = getBat(striker.name);
-                btInAll.balls++;
-                btInAll.runs += batR;
-                if (act.runs === 4) btInAll.fours++;
-                if (act.runs === 5) btInAll.fours++;
-                if (act.runs === 6) btInAll.sixes++;
                 totalRuns = batR;
             }
 
@@ -683,7 +672,7 @@
                     outBatter.isOut = true;
 
                     let dString = '';
-                    const fName = act.fielderName.trim() || 'Sub';
+                    const fName = act.fielderName ? act.fielderName.trim() : 'Sub';
                     if (act.wicketType === 'Bowled') dString = `b ${sc.bowler.name}`;
                     else if (act.wicketType === 'Caught') dString = `c ${fName} b ${sc.bowler.name}`;
                     else if (act.wicketType === 'Stumped') dString = `st ${fName} b ${sc.bowler.name}`;
@@ -691,7 +680,7 @@
 
                     outBatter.dismissal = dString;
                     outBatter.dismissalType = act.wicketType;
-                    outBatter.fielder = act.fielderName.trim();
+                    outBatter.fielder = act.fielderName ? act.fielderName.trim() : '';
                     outBatter.bowler = sc.bowler.name;
 
                     const nextIdx = sc.wickets + 1;
@@ -707,16 +696,15 @@
                     
                     if (act.wicketType === 'Run Out' && act.runOutRuns > 0) {
                         outBatter.runs += act.runOutRuns;
-                        getBat(outBatter.name).runs += act.runOutRuns;
                     }
                 }
             }
 
             let netRunsForSwap = 0;
-            if (act.extraType === 'WD') netRunsForSwap = act.extraRuns + act.runOutRuns + (act.runs || 0);
-            else if (act.extraType === 'NB') netRunsForSwap = act.runs + act.extraRuns + act.runOutRuns;
-            else if (act.extraType === 'LB' || act.extraType === 'BYE') netRunsForSwap = act.runs + act.extraRuns + act.runOutRuns;
-            else netRunsForSwap = act.runs + act.runOutRuns;
+            if (act.extraType === 'WD') netRunsForSwap = (act.extraRuns || 0) + (act.runOutRuns || 0) + (act.runs || 0);
+            else if (act.extraType === 'NB') netRunsForSwap = (act.runs || 0) + (act.extraRuns || 0) + (act.runOutRuns || 0);
+            else if (act.extraType === 'LB' || act.extraType === 'BYE') netRunsForSwap = (act.runs || 0) + (act.extraRuns || 0) + (act.runOutRuns || 0);
+            else netRunsForSwap = (act.runs || 0) + (act.runOutRuns || 0);
 
             if (netRunsForSwap % 2 !== 0) {
                 sc.striker = sc.striker === 1 ? 2 : 1;
@@ -781,10 +769,8 @@
         window.manualSwap = () => {
             let m = window.appState.activeMatch;
             if (!m.actions) m.actions = [];
-            // To record a pure swap, we could add a pseudo-action. But simplest is manual override.
-            const sc = m.innings === 1 ? m.score1 : m.score2;
-            sc.striker = sc.striker === 1 ? 2 : 1;
-            window.saveMatch(m); window.syncMatches(m); window.renderApp();
+            m.actions.push({ isSwap: true });
+            window.rebuildMatchState();
         };
 
         window.undoAction = () => {
@@ -862,9 +848,18 @@
             if (!newName || newName === oldName) { window.closeModal(); return; }
             let m = window.appState.activeMatch;
             if(!m.renames) m.renames = {};
-            m.renames[oldName] = newName;
             
-            // Rewrite history to ensure the name reflects correctly from the start
+            let isOriginal = true;
+            for (let key in m.renames) {
+                if (m.renames[key] === oldName) {
+                    m.renames[key] = newName;
+                    isOriginal = false;
+                }
+            }
+            if (isOriginal) {
+                m.renames[oldName] = newName;
+            }
+            
             if (m.actions) {
                 m.actions.forEach(a => {
                     if (a.bowlerName === oldName) a.bowlerName = newName;
@@ -942,7 +937,7 @@
                     
                     let ballsHtml = '';
                     o.log.forEach((b, bi) => {
-                        if(b.isDummy) return;
+                        if(b.isDummy || b.isSwap) return;
                         let colorClass = getBallColorClass(b);
                         ballsHtml += `<button type="button" onclick="window.openEditBallModal(${b.globalIndex})" class="shrink-0 score-bubble shadow-sm transition-transform active:scale-95 hover:ring-2 hover:ring-blue-400 cursor-pointer ${colorClass}">${b.label}</button>`;
                     });
@@ -986,7 +981,7 @@
 
             let currentBallsHtml = score.currentOverLog.length === 0 ? `<div class="text-gray-400 dark:text-slate-600 text-xs italic font-bold">...</div>` : '';
             score.currentOverLog.forEach((b, i) => {
-                if(b.isDummy) return;
+                if(b.isDummy || b.isSwap) return;
                 let colorClass = getBallColorClass(b);
                 currentBallsHtml += `<button type="button" onclick="window.openEditBallModal(${b.globalIndex})" class="shrink-0 score-bubble shadow-md transition-transform active:scale-95 hover:ring-2 hover:ring-blue-400 cursor-pointer ${colorClass}">${b.label}</button>`;
             });
@@ -1352,12 +1347,15 @@
                const dispName = customData.name !== undefined ? customData.name : defaultName;
                const dispVal = customData.val !== undefined ? customData.val : defaultVal;
                
+               const safeName = (defaultName || '').toString().replace(/'/g, "\\'").replace(/"/g, "&quot;");
+               const safeVal = (defaultVal || '').toString().replace(/'/g, "\\'").replace(/"/g, "&quot;");
+               
                let content = '';
                if (isEdit) {
                    content = `
                       <div class="space-y-2 mt-4 border-t border-gray-200 dark:border-slate-700 pt-4">
-                         <input oninput="window.saveCustomAward('${valKey}', 'name', this.value, '${defaultName.replace(/'/g, "\\'")}', '${defaultVal}')" value="${dispName}" placeholder="Player Name (Team)" class="w-full bg-gray-50 dark:bg-slate-950 border border-gray-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 font-bold text-gray-900 dark:text-white" />
-                         <input oninput="window.saveCustomAward('${valKey}', 'val', this.value, '${defaultName.replace(/'/g, "\\'")}', '${defaultVal}')" value="${dispVal}" placeholder="Score/Stat" class="w-full bg-gray-50 dark:bg-slate-950 border border-gray-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 font-bold text-gray-900 dark:text-white" />
+                         <input oninput="window.saveCustomAward('${valKey}', 'name', this.value, '${safeName}', '${safeVal}')" value="${dispName}" placeholder="Player Name (Team)" class="w-full bg-gray-50 dark:bg-slate-950 border border-gray-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 font-bold text-gray-900 dark:text-white" />
+                         <input oninput="window.saveCustomAward('${valKey}', 'val', this.value, '${safeName}', '${safeVal}')" value="${dispVal}" placeholder="Score/Stat" class="w-full bg-gray-50 dark:bg-slate-950 border border-gray-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 font-bold text-gray-900 dark:text-white" />
                          ${(customData.name !== undefined || customData.val !== undefined) ? `<button type="button" onclick="window.resetCustomAward('${valKey}')" class="text-xs text-red-500 font-bold mt-2 hover:underline">Reset to Auto</button>` : ''}
                       </div>
                    `;
@@ -1587,7 +1585,7 @@
                           <div class="grid grid-cols-4 gap-2" id="extra-run-btns">
                             ${[0,1,2,3,4,5,6].map(r => {
                                 if (isRunOnly && r === 0) return '';
-                                return `<button type="button" data-val="${r}" onclick="window.selectExtraRun(${r})" class="extra-run-btn py-4 rounded-xl font-black text-lg transition-colors shadow-sm touch-manipulation border ${r===0 ? 'bg-blue-600 text-white border-transparent shadow-[0_0_10px_rgba(37,99,235,0.4)]' : 'bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-gray-300 dark:border-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700'}">${r}</button>`
+                                return `<button type="button" data-val="${r}" onclick="window.selectExtraRun(${r})" class="extra-run-btn py-4 rounded-xl font-black text-lg transition-colors shadow-sm touch-manipulation border ${r===ms.runs ? 'bg-blue-600 text-white border-transparent shadow-[0_0_10px_rgba(37,99,235,0.4)]' : 'bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-gray-300 dark:border-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700'}">${r}</button>`
                             }).join('')}
                           </div>
                         </div>
@@ -1595,19 +1593,19 @@
                         <div class="mb-6 bg-gray-50 dark:bg-slate-800/50 p-3 rounded-xl border border-gray-200 dark:border-slate-800 shadow-inner">
                           <label class="text-[10px] text-gray-600 dark:text-slate-400 font-bold uppercase mb-3 block tracking-widest">Wicket on this ball?</label>
                           <div class="grid grid-cols-2 gap-2 mb-3" id="extra-wkt-btns">
-                            <button type="button" data-val="" onclick="window.selectExtraWkt('', this)" class="extra-wkt-btn col-span-2 py-3 rounded-xl text-sm font-bold border bg-blue-600 text-white border-transparent">No Wicket</button>
-                            <button type="button" data-val="Run Out" onclick="window.selectExtraWkt('Run Out', this)" class="extra-wkt-btn py-3 rounded-xl text-sm font-bold border bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-gray-300 dark:border-slate-600">${t.runOut}</button>
-                            ${!isRunOnly && !isNB ? `<button type="button" data-val="Stumped" onclick="window.selectExtraWkt('Stumped', this)" class="extra-wkt-btn py-3 rounded-xl text-sm font-bold border bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-gray-300 dark:border-slate-600">${t.stumped}</button>` : ''}
+                            <button type="button" data-val="" onclick="window.selectExtraWkt('', this)" class="extra-wkt-btn col-span-2 py-3 rounded-xl text-sm font-bold border ${ms.wktType === '' ? 'bg-blue-600 text-white border-transparent' : 'bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-gray-300 dark:border-slate-600'}">No Wicket</button>
+                            <button type="button" data-val="Run Out" onclick="window.selectExtraWkt('Run Out', this)" class="extra-wkt-btn py-3 rounded-xl text-sm font-bold border ${ms.wktType === 'Run Out' ? 'bg-blue-600 text-white border-transparent' : 'bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-gray-300 dark:border-slate-600'}">${t.runOut}</button>
+                            ${!isRunOnly && !isNB ? `<button type="button" data-val="Stumped" onclick="window.selectExtraWkt('Stumped', this)" class="extra-wkt-btn py-3 rounded-xl text-sm font-bold border ${ms.wktType === 'Stumped' ? 'bg-blue-600 text-white border-transparent' : 'bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-gray-300 dark:border-slate-600'}">${t.stumped}</button>` : ''}
                           </div>
 
-                          <div id="extra-ro-div" class="hidden mb-3 border-t border-gray-200 dark:border-slate-700 pt-3">
+                          <div id="extra-ro-div" class="${ms.wktType === 'Run Out' ? '' : 'hidden'} mb-3 border-t border-gray-200 dark:border-slate-700 pt-3">
                             <label class="text-[10px] text-gray-600 dark:text-slate-400 font-bold uppercase mb-2 block tracking-widest">Runs before run out</label>
-                            <div class="grid grid-cols-4 gap-2">
-                                ${[0,1,2,3,4,5,6].map(r => `<button type="button" data-val="${r}" onclick="window.selectExtraRoRun(${r})" class="extra-ro-btn py-3 rounded-lg text-sm font-black border bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-gray-300 dark:border-slate-600">${r}</button>`).join('')}
+                            <div class="grid grid-cols-5 gap-2">
+                                ${[0,1,2,3,4].map(r => `<button type="button" data-val="${r}" onclick="window.selectExtraRoRun(${r})" class="extra-ro-btn py-3 rounded-lg text-sm font-black border ${ms.roRuns === r ? 'bg-blue-600 text-white border-transparent' : 'bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-gray-300 dark:border-slate-600'}">${r}</button>`).join('')}
                             </div>
                           </div>
 
-                          <input id="extra-fielder-input" placeholder="Fielder Name" class="hidden w-full bg-white dark:bg-slate-950 border border-gray-300 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-600 text-gray-900 dark:text-white shadow-inner font-bold" />
+                          <input id="extra-fielder-input" placeholder="Fielder Name" class="${ms.wktType ? '' : 'hidden'} w-full bg-white dark:bg-slate-950 border border-gray-300 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-600 text-gray-900 dark:text-white shadow-inner font-bold" />
                         </div>
 
                         <div class="flex gap-2">
@@ -1638,8 +1636,8 @@
 
                         <div id="main-ro-div" class="${stWkt === 'Run Out' ? '' : 'hidden'} mb-4 bg-gray-50 dark:bg-slate-800/50 p-3 rounded-xl border border-gray-200 dark:border-slate-800 shadow-inner">
                           <label class="text-[10px] text-gray-600 dark:text-slate-400 font-bold uppercase mb-2 block tracking-widest">Runs before run out</label>
-                          <div class="grid grid-cols-4 gap-2">
-                            ${[0,1,2,3,4,5,6].map(r => `<button type="button" data-val="${r}" onclick="window.selectMainRoRun(${r})" class="main-ro-btn py-3 rounded-lg text-lg font-black border ${r === 0 ? 'bg-blue-600 text-white border-transparent' : 'bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-gray-300 dark:border-slate-600'}">${r}</button>`).join('')}
+                          <div class="grid grid-cols-5 gap-2">
+                            ${[0,1,2,3,4].map(r => `<button type="button" data-val="${r}" onclick="window.selectMainRoRun(${r})" class="main-ro-btn py-3 rounded-lg text-lg font-black border ${r === (window.appState.modalState.roRuns || 0) ? 'bg-blue-600 text-white border-transparent' : 'bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-gray-300 dark:border-slate-600'}">${r}</button>`).join('')}
                           </div>
                         </div>
 
@@ -1708,7 +1706,7 @@
                             <li><strong>${t.aboutF6 || 'Export & Share: Generate PDF scorecards.'}</strong></li>
                         </ul>
                         <div class="mt-8 pt-4 border-t border-gray-200 dark:border-slate-700 text-sm text-gray-500 dark:text-slate-400">
-                            <p>${t.version || 'Version Final (Ultimate Zero-Reload Edition)'}</p>
+                            
                             <p>Developed by Omprakash T.</p>
                         </div>
                     </div>
@@ -1823,12 +1821,12 @@
 
         window.generatePDFLayout = function(match, t) {
             let html = `
-            <div style="width: 800px; padding: 40px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #0f172a; background: #ffffff; box-sizing: border-box;">
+            <div style="width: 800px; padding: 30px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1e293b; background: #ffffff; box-sizing: border-box;">
                 
                 <!-- Match Report Header -->
-                <div style="text-align: center; margin-bottom: 25px; border-bottom: 3px solid #cbd5e1; padding-bottom: 15px;">
-                    <h1 style="font-size: 38px; font-weight: 900; color: #1e3a8a; margin: 0; text-transform: uppercase; letter-spacing: 2px;">MATCH REPORT</h1>
-                    <div style="font-size: 16px; color: #64748b; margin-top: 8px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px;">
+                <div style="text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 25px;">
+                    <h1 style="font-size: 32px; font-weight: 900; color: #0f172a; margin: 0; letter-spacing: 1px;">MATCH REPORT</h1>
+                    <div style="font-size: 14px; color: #64748b; margin-top: 5px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">
                         ${match.roundStr || 'MATCH'} &bull; ${window.formatDateStr(match.createdAt)}
                     </div>
                 </div>
@@ -1836,14 +1834,14 @@
                 <!-- Teams & Scores Summary -->
                 <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
                     <tr>
-                        <td style="width: 45%; text-align: right; vertical-align: middle; padding: 10px;">
-                            <div style="font-size: 36px; font-weight: 900; color: #2563eb; text-transform: uppercase;">${match.team1}</div>
-                            ${match.score1 ? `<div style="font-size: 24px; font-weight: bold; color: #334155; margin-top: 5px;">${match.score1.runs}/${match.score1.wickets} <span style="font-size: 16px; color: #64748b;">(${window.fmtOvers(match.score1.balls)})</span></div>` : ''}
+                        <td style="width: 42%; text-align: right; vertical-align: middle;">
+                            <div style="font-size: 28px; font-weight: 900; color: #1d4ed8; text-transform: uppercase;">${match.team1}</div>
+                            ${match.score1 ? `<div style="font-size: 20px; font-weight: 700; color: #475569; margin-top: 4px;">${match.score1.runs}/${match.score1.wickets} <span style="font-size: 14px; color: #94a3b8;">(${window.fmtOvers(match.score1.balls)})</span></div>` : ''}
                         </td>
-                        <td style="width: 10%; text-align: center; vertical-align: middle; font-size: 28px; font-weight: 900; color: #ef4444; padding: 10px;">VS</td>
-                        <td style="width: 45%; text-align: left; vertical-align: middle; padding: 10px;">
-                            <div style="font-size: 36px; font-weight: 900; color: #16a34a; text-transform: uppercase;">${match.team2}</div>
-                            ${(match.score2 && (match.innings === 2 || match.matchStatus !== 'playing')) ? `<div style="font-size: 24px; font-weight: bold; color: #334155; margin-top: 5px;">${match.score2.runs}/${match.score2.wickets} <span style="font-size: 16px; color: #64748b;">(${window.fmtOvers(match.score2.balls)})</span></div>` : ''}
+                        <td style="width: 16%; text-align: center; vertical-align: middle; font-size: 22px; font-weight: 900; color: #ef4444;">VS</td>
+                        <td style="width: 42%; text-align: left; vertical-align: middle;">
+                            <div style="font-size: 28px; font-weight: 900; color: #15803d; text-transform: uppercase;">${match.team2}</div>
+                            ${(match.score2 && (match.innings === 2 || match.matchStatus !== 'playing')) ? `<div style="font-size: 20px; font-weight: 700; color: #475569; margin-top: 4px;">${match.score2.runs}/${match.score2.wickets} <span style="font-size: 14px; color: #94a3b8;">(${window.fmtOvers(match.score2.balls)})</span></div>` : ''}
                         </td>
                     </tr>
                 </table>
@@ -1861,86 +1859,86 @@
                    res = `${match.team2} ${t.wonBy} ${10 - match.score2.wickets} wkts (${ballsLeft} balls left)`;
                } else if (match.matchStatus === 'tie') res = t.tied;
                
-               html += `<div style="text-align: center; background-color: #dc2626; color: #ffffff; padding: 20px; border-radius: 8px; font-size: 24px; font-weight: 900; margin-bottom: 40px; text-transform: uppercase; border: 3px solid #991b1b;">${res}</div>`;
+               html += `<div style="text-align: center; background-color: #fef2f2; color: #b91c1c; padding: 15px; border-radius: 6px; font-size: 20px; font-weight: 800; margin-bottom: 30px; border: 1px solid #f87171; text-transform: uppercase;">${res}</div>`;
             }
 
             const matchSets = match.isSuperOver ? [ { s1: match.mainScore1, s2: match.mainScore2, label: 'MAIN MATCH' }, { s1: match.score1, s2: match.score2, label: match.tieBreakerInfo?.toUpperCase() || 'TIE BREAKER' } ] : [ { s1: match.score1, s2: match.score2, label: '' } ];
 
             matchSets.forEach((mSet) => {
-                if (mSet.label) html += `<div style="text-align: center; border-bottom: 3px solid #cbd5e1; padding-bottom: 10px; margin-top: 30px; margin-bottom: 20px; font-size: 22px; font-weight: 900; color: #1e293b; letter-spacing: 2px; text-transform: uppercase;">${mSet.label}</div>`;
+                if (mSet.label) html += `<div style="text-align: center; font-size: 18px; font-weight: 900; color: #0f172a; margin: 30px 0 15px 0; background: #e2e8f0; padding: 8px; text-transform: uppercase; letter-spacing: 1px;">${mSet.label}</div>`;
                 
                 [mSet.s1, mSet.s2].forEach((sc, i) => {
                     if (!sc || !(i === 0 || match.innings === 2 || match.matchStatus !== 'playing')) return;
                     const team = i === 0 ? match.team1 : match.team2;
                     const innPrefix = i === 0 ? '1st ' : '2nd ';
 
-                    html += `<div style="margin-top: 25px; border: 2px solid #94a3b8; border-radius: 8px; overflow: hidden; background: #ffffff;">`;
+                    html += `<div style="margin-bottom: 30px;">`;
                     
                     // Innings Header
                     html += `
                         <table style="width: 100%; border-collapse: collapse; background-color: #1e3a8a; color: #ffffff;">
                             <tr>
-                                <td style="padding: 12px 20px; font-size: 20px; font-weight: 900; text-transform: uppercase; text-align: left;">${innPrefix}INNINGS - ${team}</td>
-                                <td style="padding: 12px 20px; font-size: 20px; font-weight: 900; text-align: right;">${sc.runs}/${sc.wickets} <span style="font-size: 16px; font-weight: normal; opacity: 0.9;">(${window.fmtOvers(sc.balls)} Overs)</span></td>
+                                <td style="padding: 10px 15px; font-size: 16px; font-weight: bold; text-transform: uppercase; text-align: left;">${innPrefix}INNINGS - ${team}</td>
+                                <td style="padding: 10px 15px; font-size: 16px; font-weight: bold; text-align: right;">${sc.runs}/${sc.wickets} <span style="font-size: 13px; opacity: 0.9;">(${window.fmtOvers(sc.balls)} Overs)</span></td>
                             </tr>
                         </table>
                     `;
 
                     // Batting Table
-                    html += `<table style="width: 100%; border-collapse: collapse; font-size: 16px;">
+                    html += `<table style="width: 100%; border-collapse: collapse; font-size: 14px;">
                                 <thead>
-                                    <tr style="background-color: #e0e7ff; color: #1e3a8a;">
-                                        <th style="padding: 12px 15px; font-weight: bold; text-align: left; border: 1px solid #cbd5e1; width: 40%;">BATSMAN</th>
-                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 12%;">R</th>
-                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 12%;">B</th>
-                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 12%;">4s</th>
-                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 12%;">6s</th>
-                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 12%;">SR</th>
+                                    <tr style="background-color: #f1f5f9; color: #334155;">
+                                        <th style="padding: 10px 15px; font-weight: bold; text-align: left; border: 1px solid #cbd5e1; width: 40%;">BATSMAN</th>
+                                        <th style="padding: 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 12%;">R</th>
+                                        <th style="padding: 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 12%;">B</th>
+                                        <th style="padding: 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 12%;">4s</th>
+                                        <th style="padding: 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 12%;">6s</th>
+                                        <th style="padding: 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 12%;">SR</th>
                                     </tr>
                                 </thead>
                                 <tbody>`;
                     sc.allBatters.forEach((b, j) => {
                         if (b.balls === 0 && !b.isOut && j > 1 && match.matchStatus === 'playing') return;
-                        html += `<tr style="background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">
-                                    <td style="padding: 10px 15px; text-align: left; border: 1px solid #cbd5e1;">
-                                        <div style="font-weight: bold; font-size: 18px; color: #0f172a;">${b.name}</div>
-                                        <div style="font-size: 14px; color: #dc2626; margin-top: 2px; font-weight: bold;">${b.isOut ? (b.dismissal || '(out)') : 'not out'}</div>
+                        html += `<tr>
+                                    <td style="padding: 8px 15px; text-align: left; border: 1px solid #cbd5e1; background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+                                        <div style="font-weight: 700; font-size: 15px; color: #0f172a;">${b.name}</div>
+                                        <div style="font-size: 11px; color: ${b.isOut ? '#dc2626' : '#64748b'}; margin-top: 2px; font-weight: 600;">${b.isOut ? (b.dismissal || '(out)') : 'not out'}</div>
                                     </td>
-                                    <td style="padding: 10px; text-align: center; font-weight: 900; font-size: 18px; border: 1px solid #cbd5e1;">${b.runs}</td>
-                                    <td style="padding: 10px; text-align: center; color: #475569; border: 1px solid #cbd5e1;">${b.balls}</td>
-                                    <td style="padding: 10px; text-align: center; color: #475569; border: 1px solid #cbd5e1;">${b.fours}</td>
-                                    <td style="padding: 10px; text-align: center; color: #475569; border: 1px solid #cbd5e1;">${b.sixes}</td>
-                                    <td style="padding: 10px; text-align: center; color: #475569; border: 1px solid #cbd5e1;">${window.calcSR(b.runs, b.balls)}</td>
+                                    <td style="padding: 8px; text-align: center; font-weight: 800; font-size: 15px; border: 1px solid #cbd5e1; background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">${b.runs}</td>
+                                    <td style="padding: 8px; text-align: center; color: #475569; border: 1px solid #cbd5e1; background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">${b.balls}</td>
+                                    <td style="padding: 8px; text-align: center; color: #475569; border: 1px solid #cbd5e1; background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">${b.fours}</td>
+                                    <td style="padding: 8px; text-align: center; color: #475569; border: 1px solid #cbd5e1; background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">${b.sixes}</td>
+                                    <td style="padding: 8px; text-align: center; color: #475569; border: 1px solid #cbd5e1; background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">${window.calcSR(b.runs, b.balls)}</td>
                                  </tr>`;
                     });
                     html += `</tbody></table>`;
                     
                     // Extras
-                    html += `<div style="padding: 12px 20px; background-color: #f1f5f9; font-size: 16px; color: #334155; font-weight: bold; border-bottom: 2px solid #94a3b8; border-top: 2px solid #94a3b8;">
-                                EXTRAS: <span style="color: #0f172a; font-weight: 900; font-size: 18px; margin-right: 15px;">${sc.extras}</span> 
-                                <span style="font-size: 14px; font-weight: normal;">(WD: ${sc.wides}, NB: ${sc.noBalls})</span>
+                    html += `<div style="padding: 10px 15px; background-color: #f8fafc; font-size: 14px; color: #334155; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1;">
+                                <span style="font-weight: bold;">EXTRAS: </span><span style="color: #0f172a; font-weight: 800; font-size: 15px; margin-right: 15px;">${sc.extras}</span> 
+                                <span style="font-size: 13px;">(WD: ${sc.wides}, NB: ${sc.noBalls})</span>
                              </div>`;
 
                     // Bowling Table
-                    html += `<table style="width: 100%; border-collapse: collapse; font-size: 16px;">
+                    html += `<table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 15px;">
                                 <thead>
-                                    <tr style="background-color: #e0e7ff; color: #1e3a8a;">
-                                        <th style="padding: 12px 15px; font-weight: bold; text-align: left; border: 1px solid #cbd5e1; width: 40%;">BOWLER</th>
-                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 15%;">O</th>
-                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 15%;">R</th>
-                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 15%;">W</th>
-                                        <th style="padding: 12px 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 15%;">ECO</th>
+                                    <tr style="background-color: #f1f5f9; color: #334155;">
+                                        <th style="padding: 10px 15px; font-weight: bold; text-align: left; border: 1px solid #cbd5e1; width: 40%;">BOWLER</th>
+                                        <th style="padding: 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 15%;">O</th>
+                                        <th style="padding: 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 15%;">R</th>
+                                        <th style="padding: 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 15%;">W</th>
+                                        <th style="padding: 10px; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; width: 15%;">ECO</th>
                                     </tr>
                                 </thead>
                                 <tbody>`;
                     sc.allBowlers.forEach((b, j) => {
                         if (b.balls === 0 && b.runs === 0 && match.matchStatus === 'playing') return;
-                        html += `<tr style="background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">
-                                    <td style="padding: 10px 15px; text-align: left; font-weight: bold; font-size: 18px; color: #0f172a; border: 1px solid #cbd5e1;">${b.name}</td>
-                                    <td style="padding: 10px; text-align: center; color: #475569; border: 1px solid #cbd5e1;">${window.fmtOvers(b.balls)}</td>
-                                    <td style="padding: 10px; text-align: center; font-weight: 900; font-size: 18px; border: 1px solid #cbd5e1;">${b.runs}</td>
-                                    <td style="padding: 10px; text-align: center; font-weight: 900; font-size: 18px; color: #dc2626; border: 1px solid #cbd5e1;">${b.wickets}</td>
-                                    <td style="padding: 10px; text-align: center; color: #475569; border: 1px solid #cbd5e1;">${window.calcEco(b.runs, b.balls)}</td>
+                        html += `<tr>
+                                    <td style="padding: 8px 15px; text-align: left; font-weight: 600; font-size: 15px; color: #0f172a; border: 1px solid #cbd5e1; background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">${b.name}</td>
+                                    <td style="padding: 8px; text-align: center; color: #475569; border: 1px solid #cbd5e1; background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">${window.fmtOvers(b.balls)}</td>
+                                    <td style="padding: 8px; text-align: center; font-weight: 800; font-size: 15px; border: 1px solid #cbd5e1; background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">${b.runs}</td>
+                                    <td style="padding: 8px; text-align: center; font-weight: 800; font-size: 15px; color: #dc2626; border: 1px solid #cbd5e1; background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">${b.wickets}</td>
+                                    <td style="padding: 8px; text-align: center; color: #475569; border: 1px solid #cbd5e1; background-color: ${j % 2 === 0 ? '#ffffff' : '#f8fafc'};">${window.calcEco(b.runs, b.balls)}</td>
                                  </tr>`;
                     });
                     html += `</tbody></table>`;
@@ -1948,7 +1946,7 @@
                 });
             });
 
-            html += `<div style="text-align: center; font-size: 12px; font-weight: bold; color: #94a3b8; margin-top: 40px; padding-top: 20px; border-top: 2px dashed #cbd5e1; letter-spacing: 2px; text-transform: uppercase;">GENERATED BY CRICSCORE_ICC</div>`;
+            html += `<div style="text-align: center; font-size: 11px; font-weight: bold; color: #94a3b8; margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; letter-spacing: 1px;">GENERATED BY CRICSCORE_ICC</div>`;
             html += `</div>`;
             return html;
         };

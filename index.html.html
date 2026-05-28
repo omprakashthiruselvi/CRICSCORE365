@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>CRICSCORE_ICC - Offline Tournament Manager</title>
+    <title>CRICSCORE365_ICC - Offline Tournament Manager</title>
     
     <!-- PURE PWA META TAGS -->
     <meta name="theme-color" content="#1e3a8a">
@@ -182,8 +182,8 @@
                         }
                         
                         ${(window.appState.view === 'scoring' || window.appState.view === 'innings_break' || window.appState.view === 'end') && m ? `
-                            <div class="text-left leading-tight">
-                                <div class="text-[10px] text-red-600 dark:text-red-500 font-bold uppercase tracking-widest">${m.roundStr || 'MATCH'} &bull; ${m.isSuperOver ? 'SUPER OVER' : (m.innings === 1 ? '1ST' : '2ND')} INNINGS</div>
+                            <div class="text-left leading-tight cursor-pointer group" onclick="window.openEditTeamsModal()">
+                                <div class="text-[10px] text-red-600 dark:text-red-500 font-bold uppercase tracking-widest flex items-center gap-1">${m.roundStr || 'MATCH'} &bull; ${m.isSuperOver ? 'SUPER OVER' : (m.innings === 1 ? '1ST' : '2ND')} INNINGS <i class="fa-solid fa-pen text-[8px] opacity-50 group-hover:opacity-100"></i></div>
                                 <div class="text-lg font-black uppercase tracking-wide text-gray-900 dark:text-white">${m.innings === 1 ? m.team1 : m.team2} <span class="text-gray-500 dark:text-slate-400 font-bold text-sm">v ${m.innings === 1 ? m.team2 : m.team1}</span></div>
                             </div>
                         ` : headerTitle ? `
@@ -253,6 +253,7 @@
         // --- GLOBAL ACTIONS ---
         window.changeView = (v) => { window.appState.view = v; window.appState.modal = {type:null, arg1:null, arg2:null}; window.appState.editTargetGlobalIndex = null; window.renderApp(); };
         window.changeLang = (l) => { window.appState.lang = l; localStorage.setItem('cricscore_icc_lang', l); window.renderApp(); };
+        
         window.openModal = (type, arg1=null, arg2=null) => { 
             let m = window.appState.activeMatch;
             window.appState.modal = {type, arg1, arg2}; 
@@ -262,19 +263,22 @@
             window.appState.modalState = { runs: 0, wktType: wktTypeDef, fielder: '', roRuns: 0 };
             window.renderApp(); 
         };
+        
         window.closeModal = () => { window.appState.modal = {type:null, arg1:null, arg2:null}; window.renderApp(); };
         window.toggleTheme = () => { window.appState.theme = window.appState.theme === 'dark' ? 'light' : 'dark'; window.renderApp(); };
 
+        window.openEditTeamsModal = () => {
+            window.appState.modal = {type: 'editTeams'};
+            window.renderApp();
+        };
+
         // --- SETUP VIEW ---
-        // DO NOT reload the whole app on text input to prevent losing focus!
         window.handleSetupInput = (field, val) => {
             window.appState.setupData[field] = val;
             const sd = window.appState.setupData;
             const isBtnDisabled = !(sd.t1.trim() && sd.t2.trim() && parseInt(sd.ovStr) > 0);
-            
             const dirBtn = document.getElementById('start-match-direct-btn');
             if (dirBtn) dirBtn.disabled = isBtnDisabled;
-            
             const tossBtn = document.getElementById('start-match-toss-btn');
             if (tossBtn) tossBtn.disabled = isBtnDisabled;
         };
@@ -395,7 +399,11 @@
         window.tossSetPhase = (p) => { window.appState.tossState.phase = p; window.renderApp(); };
         window.manualBat = (fbt) => { 
             let m = window.appState.activeMatch; 
-            if(fbt !== m.team1) { m.team1 = m.team2; m.team2 = m.team1; }
+            if(fbt !== m.team1) { 
+                let temp = m.team1;
+                m.team1 = m.team2; 
+                m.team2 = temp; 
+            }
             window.saveMatch(m); window.changeView('scoring');
         };
         window.tossCall = (c) => {
@@ -412,7 +420,11 @@
             let m = window.appState.activeMatch; 
             let w = window.appState.tossState.winner;
             if ((c === 'bat' && w === m.team1) || (c === 'bowl' && w === m.team2)) { /* correct */ } 
-            else { m.team1 = m.team2; m.team2 = m.team1; }
+            else { 
+                let temp = m.team1;
+                m.team1 = m.team2; 
+                m.team2 = temp; 
+            }
             window.saveMatch(m); window.changeView('scoring');
         };
 
@@ -588,6 +600,12 @@
             let totalRuns = (act.runs || 0) + (act.extraRuns || 0) + (act.runOutRuns || 0);
             let wasFreeHit = m.isFreeHit;
 
+            const getBat = (name) => {
+                let b = sc.allBatters.find(x => x.name === name);
+                if (!b) { b = { name, runs: 0, balls: 0, fours: 0, sixes: 0, isOut: false }; sc.allBatters.push(b); }
+                return b;
+            };
+
             if (act.extraType === 'WD') {
                 isLegal = false;
                 const wides = 1 + (act.extraRuns || 0) + (act.runOutRuns || 0) + (act.runs || 0);
@@ -693,10 +711,6 @@
                     nb.name = m.renames[nb.name] || nb.name;
 
                     if (sc.striker === 1) sc.batter1 = nb; else sc.batter2 = nb;
-                    
-                    if (act.wicketType === 'Run Out' && act.runOutRuns > 0) {
-                        outBatter.runs += act.runOutRuns;
-                    }
                 }
             }
 
@@ -843,6 +857,15 @@
             window.closeModal();
         };
 
+        window.submitEditTeams = (t1, t2, round) => {
+            let m = window.appState.activeMatch;
+            if (t1.trim()) m.team1 = t1.trim();
+            if (t2.trim()) m.team2 = t2.trim();
+            m.roundStr = round.trim();
+            window.rebuildMatchState();
+            window.closeModal();
+        };
+
         window.submitEditName = (role, oldName, newName) => {
             newName = newName.trim();
             if (!newName || newName === oldName) { window.closeModal(); return; }
@@ -933,7 +956,7 @@
                     const fives = o.log.filter(b => b.runVal === 5 && b.extraType === null).length;
                     const sixes = o.log.filter(b => b.runVal === 6 && b.extraType === null).length;
                     const extras = o.log.filter(b => b.extraType !== null).length;
-                    const wkts = o.log.filter(b => b.actIsWicket).length;
+                    const wkts = o.log.filter(b => b.isWicket).length;
                     
                     let ballsHtml = '';
                     o.log.forEach((b, bi) => {
@@ -1460,6 +1483,32 @@
             const m = window.appState.activeMatch;
             const mo = window.appState.modal;
 
+            if (mo.type === 'editTeams') {
+                return `
+                    <div class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 pop-in backdrop-blur-sm modal-backdrop">
+                      <div class="bg-white dark:bg-slate-900 p-6 rounded-2xl w-full max-w-sm border border-gray-300 dark:border-slate-700 shadow-2xl">
+                        <h3 class="font-bold mb-4 text-gray-900 dark:text-white text-lg">Edit Match Details</h3>
+                        <form onsubmit="event.preventDefault(); window.submitEditTeams(document.getElementById('edit-t1-input').value, document.getElementById('edit-t2-input').value, document.getElementById('edit-round-input').value);">
+                          
+                          <label class="text-[10px] text-gray-500 dark:text-slate-400 font-bold uppercase tracking-widest mb-1 block">Team 1 Name</label>
+                          <input id="edit-t1-input" value="${m.team1}" class="w-full bg-gray-50 dark:bg-slate-950 p-4 rounded-xl border border-gray-300 dark:border-slate-800 mb-3 text-gray-900 dark:text-white outline-none focus:border-blue-600 font-bold shadow-inner" required/>
+                          
+                          <label class="text-[10px] text-gray-500 dark:text-slate-400 font-bold uppercase tracking-widest mb-1 block">Team 2 Name</label>
+                          <input id="edit-t2-input" value="${m.team2}" class="w-full bg-gray-50 dark:bg-slate-950 p-4 rounded-xl border border-gray-300 dark:border-slate-800 mb-3 text-gray-900 dark:text-white outline-none focus:border-blue-600 font-bold shadow-inner" required/>
+
+                          <label class="text-[10px] text-gray-500 dark:text-slate-400 font-bold uppercase tracking-widest mb-1 block">Round Name</label>
+                          <input id="edit-round-input" value="${m.roundStr}" class="w-full bg-gray-50 dark:bg-slate-950 p-4 rounded-xl border border-gray-300 dark:border-slate-800 mb-5 text-gray-900 dark:text-white outline-none focus:border-blue-600 font-bold shadow-inner" />
+                          
+                          <div class="flex gap-2">
+                            <button type="button" onclick="window.closeModal()" class="flex-1 bg-gray-200 dark:bg-slate-800 text-gray-800 dark:text-white py-4 rounded-xl font-bold hover:bg-gray-300 dark:hover:bg-slate-700 touch-manipulation">Cancel</button>
+                            <button type="submit" class="flex-1 text-white bg-blue-600 py-4 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-600/30 touch-manipulation tracking-wide">Save</button>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
+                `;
+            }
+
             if (mo.type === 'edit_ball_keypad') {
                 return `
                     <div class="fixed inset-0 bg-black/90 flex flex-col items-center justify-center p-4 z-50 pop-in backdrop-blur-sm modal-backdrop">
@@ -1475,7 +1524,7 @@
 
                             <div class="grid grid-cols-4 gap-2">
                                 ${[0,1,2,3,4,5,6].map(r => `
-                                    <button type="button" onclick="window.submitEditOrRun(${r})" class="h-16 rounded-xl font-black text-2xl transition-transform active:scale-95 shadow-md border touch-manipulation ${r===6 ? 'text-white bg-blue-600 border-blue-700 shadow-[0_0_15px_rgba(37,99,235,0.4)]' : r===4 ? 'text-white bg-blue-500 border-blue-600 shadow-[0_0_10px_rgba(59,130,246,0.4)]' : r===5 ? 'text-white bg-purple-600 border-purple-700 shadow-[0_0_10px_rgba(147,51,234,0.4)]' : r===0 ? 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-400 border-gray-300 dark:border-slate-700 hover:bg-gray-200 dark:hover:bg-slate-700' : 'bg-white dark:bg-slate-800 text-gray-900 dark:text-white border-gray-300 dark:border-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700'}">${r}</button>
+                                    <button type="button" onclick="window.submitEditOrRun(${r})" class="h-16 rounded-xl font-black text-2xl transition-transform active:scale-95 shadow-md border touch-manipulation ${r===6 ? 'text-white bg-blue-600 border-blue-700 shadow-[0_0_15px_rgba(37,99,235,0.5)]' : r===4 ? 'text-white bg-blue-500 border-blue-600 shadow-[0_0_10px_rgba(59,130,246,0.4)]' : r===5 ? 'text-white bg-purple-600 border-purple-700 shadow-[0_0_10px_rgba(147,51,234,0.4)]' : r===0 ? 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-400 border-gray-300 dark:border-slate-700 hover:bg-gray-200 dark:hover:bg-slate-700' : 'bg-white dark:bg-slate-800 text-gray-900 dark:text-white border-gray-300 dark:border-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700'}">${r}</button>
                                 `).join('')}
                                 <button type="button" onclick="window.openModal('wicket')" class="col-span-4 h-16 bg-gradient-to-r from-red-600 to-red-800 text-white font-black text-xl rounded-xl shadow-md active:scale-95 uppercase tracking-widest border border-red-900 touch-manipulation mt-1">${t.wicket}</button>
                                 
@@ -1691,10 +1740,10 @@
                 <div class="flex-1 p-6 overflow-y-auto max-w-3xl mx-auto w-full pb-20">
                     <div class="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-2xl p-6 shadow-xl pop-in">
                         <h2 class="text-2xl font-black text-blue-600 dark:text-blue-500 mb-4 flex items-center gap-2">
-                            <i class="fa-solid fa-circle-info text-3xl"></i> ${t.aboutTitle || 'About CRICSCORE_ICC'}
+                            <i class="fa-solid fa-circle-info text-3xl"></i> ${t.aboutTitle || 'About CRICSCORE365_ICC'}
                         </h2>
                         <p class="text-gray-700 dark:text-slate-300 mb-4 leading-relaxed font-medium">
-                            ${t.aboutP1 || 'CRICSCORE_ICC is a powerful, offline-first Progressive Web Application (PWA) built specifically for cricket enthusiasts, local tournaments, and street cricket matches.'}
+                            ${t.aboutP1 || 'CRICSCORE365_ICC is a powerful, offline-first Progressive Web Application (PWA) built specifically for cricket enthusiasts, local tournaments, and street cricket matches.'}
                         </p>
                         <h3 class="font-bold text-lg text-gray-900 dark:text-white mt-6 mb-2">${t.aboutKey || 'Key Features'}</h3>
                         <ul class="list-disc pl-5 space-y-2 text-gray-700 dark:text-slate-300 font-medium">
@@ -1706,7 +1755,7 @@
                             <li><strong>${t.aboutF6 || 'Export & Share: Generate PDF scorecards.'}</strong></li>
                         </ul>
                         <div class="mt-8 pt-4 border-t border-gray-200 dark:border-slate-700 text-sm text-gray-500 dark:text-slate-400">
-                            
+                           
                             <p>Developed by Omprakash T.</p>
                         </div>
                     </div>
